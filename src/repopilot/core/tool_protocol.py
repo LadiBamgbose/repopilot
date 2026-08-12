@@ -25,7 +25,7 @@ class ToolResult(BaseModel):
     """
 
     success: bool
-    output: str | None = None
+    output: Any | None = None
     error: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     duration_ms: int | None = None
