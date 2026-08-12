@@ -20,6 +20,18 @@ def test_execute_tool_dispatches_read_file(tmp_path):
     assert result.error is None
 
 
+def test_execute_tool_dispatches_list_files(tmp_path):
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    request = ToolCall(tool_name="list_files", arguments={})
+
+    result = execute_tool(request, workspace=workspace)
+
+    assert result.success is True
+    assert result.output == ["a.txt"]
+    assert result.error is None
+
+
 def test_execute_tool_unknown_tool(tmp_path):
     workspace = Workspace(tmp_path)
     request = ToolCall(tool_name="not_a_tool", arguments={})
