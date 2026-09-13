@@ -32,6 +32,23 @@ def test_execute_tool_dispatches_list_files(tmp_path):
     assert result.error is None
 
 
+def test_execute_tool_dispatches_search_repo(tmp_path):
+    (tmp_path / "registry.py").write_text("def execute_tool():\n    pass\n", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    request = ToolCall(
+        tool_name="search_repo",
+        arguments={"query": "execute_tool"},
+    )
+
+    result = execute_tool(request, workspace=workspace)
+
+    assert result.success is True
+    assert result.output == [
+        {"path": "registry.py", "line_number": 1, "line": "def execute_tool():"}
+    ]
+    assert result.error is None
+
+
 def test_execute_tool_unknown_tool(tmp_path):
     workspace = Workspace(tmp_path)
     request = ToolCall(tool_name="not_a_tool", arguments={})
