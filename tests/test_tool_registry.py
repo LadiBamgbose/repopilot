@@ -49,6 +49,28 @@ def test_execute_tool_dispatches_search_repo(tmp_path):
     assert result.error is None
 
 
+def test_execute_tool_dispatches_write_file(tmp_path):
+    (tmp_path / "example.py").write_text("print('old')\n", encoding="utf-8")
+    workspace = Workspace(tmp_path)
+    request = ToolCall(
+        tool_name="write_file",
+        arguments={
+            "path": "example.py",
+            "contents": "print('updated')\n",
+        },
+    )
+
+    result = execute_tool(request, workspace=workspace)
+
+    assert result.success is True
+    assert result.output == {
+        "path": "example.py",
+        "bytes_written": len("print('updated')\n".encode("utf-8")),
+    }
+    assert result.error is None
+    assert (tmp_path / "example.py").read_text(encoding="utf-8") == "print('updated')\n"
+
+
 def test_execute_tool_unknown_tool(tmp_path):
     workspace = Workspace(tmp_path)
     request = ToolCall(tool_name="not_a_tool", arguments={})
