@@ -1,5 +1,8 @@
 """Tests for tool registry dispatch."""
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from repopilot.core.tool_protocol import ToolCall
 from repopilot.core.tool_registry import execute_tool
 from repopilot.workspace import Workspace
@@ -69,6 +72,23 @@ def test_execute_tool_dispatches_write_file(tmp_path):
     }
     assert result.error is None
     assert (tmp_path / "example.py").read_text(encoding="utf-8") == "print('updated')\n"
+
+
+def test_execute_tool_dispatches_run_tests(tmp_path):
+    workspace = Workspace(tmp_path)
+    completed = SimpleNamespace(returncode=0, stdout="ok", stderr="")
+    request = ToolCall(tool_name="run_tests", arguments={})
+
+    with patch("repopilot.tools.run_tests.subprocess.run", return_value=completed):
+        result = execute_tool(request, workspace=workspace)
+
+    assert result.success is True
+    assert result.output == {
+        "exit_code": 0,
+        "stdout": "ok",
+        "stderr": "",
+    }
+    assert result.error is None
 
 
 def test_execute_tool_unknown_tool(tmp_path):

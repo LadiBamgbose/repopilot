@@ -3,6 +3,7 @@
 from repopilot.core.tool_protocol import ToolCall, ToolResult
 from repopilot.tools.list_files import list_files
 from repopilot.tools.read_file import read_file
+from repopilot.tools.run_tests import run_tests
 from repopilot.tools.search_repo import search_repo
 from repopilot.tools.write_file import write_file
 from repopilot.workspace import Workspace
@@ -10,6 +11,7 @@ from repopilot.workspace import Workspace
 TOOL_REGISTRY = {
     "list_files": list_files,
     "read_file": read_file,
+    "run_tests": run_tests,
     "search_repo": search_repo,
     "write_file": write_file,
 }
