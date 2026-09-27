@@ -1,7 +1,17 @@
 """Read a UTF-8 text file from the repository."""
 
+from pydantic import BaseModel, ConfigDict
+
 from repopilot.core.tool_protocol import ToolResult
 from repopilot.workspace import Workspace
+
+
+class ReadFileArgs(BaseModel):
+    """Arguments for ``read_file``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
 
 
 def read_file(path: str, *, workspace: Workspace) -> ToolResult:

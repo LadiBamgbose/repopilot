@@ -1,7 +1,17 @@
 """Search the repository for matching text."""
 
+from pydantic import BaseModel, ConfigDict
+
 from repopilot.core.tool_protocol import ToolResult
 from repopilot.workspace import Workspace
+
+
+class SearchRepoArgs(BaseModel):
+    """Arguments for ``search_repo``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
 
 _IGNORED_NAMES = frozenset({".git", ".venv", "__pycache__", ".pytest_cache"})
 
