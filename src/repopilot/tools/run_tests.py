@@ -4,8 +4,16 @@ import subprocess
 import sys
 import time
 
+from pydantic import BaseModel, ConfigDict
+
 from repopilot.core.tool_protocol import ToolResult
 from repopilot.workspace import Workspace
+
+
+class RunTestsArgs(BaseModel):
+    """Arguments for ``run_tests``. This tool takes no caller arguments."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def run_tests(*, workspace: Workspace) -> ToolResult:

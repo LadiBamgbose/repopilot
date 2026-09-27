@@ -1,7 +1,18 @@
 """Overwrite a UTF-8 text file in the repository."""
 
+from pydantic import BaseModel, ConfigDict
+
 from repopilot.core.tool_protocol import ToolResult
 from repopilot.workspace import Workspace
+
+
+class WriteFileArgs(BaseModel):
+    """Arguments for ``write_file``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    contents: str
 
 
 def write_file(

@@ -1,7 +1,15 @@
 """List files in the repository workspace."""
 
+from pydantic import BaseModel, ConfigDict
+
 from repopilot.core.tool_protocol import ToolResult
 from repopilot.workspace import Workspace
+
+
+class ListFilesArgs(BaseModel):
+    """Arguments for ``list_files``. This tool takes no caller arguments."""
+
+    model_config = ConfigDict(extra="forbid")
 
 _IGNORED_NAMES = frozenset({".git", ".venv", "__pycache__", ".pytest_cache"})
 
