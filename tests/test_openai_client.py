@@ -65,6 +65,7 @@ def test_start_sends_only_the_initial_task():
     assert request["input"] == [{"role": "user", "content": "read the repo"}]
     assert "previous_response_id" not in request
     assert request["model"] == "gpt-test"
+    assert request["parallel_tool_calls"] is False
 
 
 def test_start_stores_response_id_and_exact_call_id():

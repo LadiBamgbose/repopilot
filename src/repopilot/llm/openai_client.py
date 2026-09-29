@@ -69,6 +69,8 @@ class OpenAIClient:
             "model": self.model,
             "input": input,
             "tools": to_openai_function_tools(list(self._tools.values())),
+            # The runner executes one tool per step and answers one call id.
+            "parallel_tool_calls": False,
         }
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
