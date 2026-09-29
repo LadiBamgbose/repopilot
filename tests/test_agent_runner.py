@@ -1,14 +1,8 @@
 """Tests for the minimal agent orchestration loop."""
 
-from typing import Any
-
 from repopilot.agent.runner import run_agent
-from repopilot.agent.schemas import (
-    AgentResponse,
-    FinalAnswerResponse,
-    ToolCallResponse,
-)
-from repopilot.core.tool_protocol import ToolCall
+from repopilot.agent.schemas import AgentResponse, FinalAnswerResponse, ToolCallResponse
+from repopilot.core.tool_protocol import ToolCall, ToolResult
 from repopilot.workspace import Workspace
 
 
@@ -17,10 +11,18 @@ class ScriptedLLM:
 
     def __init__(self, responses: list[AgentResponse]) -> None:
         self._responses = list(responses)
-        self.calls: list[list[dict[str, Any]]] = []
+        self.started_task: str | None = None
+        self.tool_results: list[ToolResult] = []
 
-    def respond(self, messages: list[dict[str, Any]]) -> AgentResponse:
-        self.calls.append([dict(message) for message in messages])
+    def start(self, task: str) -> AgentResponse:
+        self.started_task = task
+        return self._next()
+
+    def continue_with_tool_result(self, tool_result: ToolResult) -> AgentResponse:
+        self.tool_results.append(tool_result)
+        return self._next()
+
+    def _next(self) -> AgentResponse:
         if not self._responses:
             raise AssertionError("ScriptedLLM has no remaining responses")
         return self._responses.pop(0)
@@ -38,8 +40,8 @@ def test_run_agent_immediate_final_answer(tmp_path):
     assert result.final_answer == "already done"
     assert result.error is None
     assert result.steps == 1
-    assert len(llm.calls) == 1
-    assert llm.calls[0][0] == {"role": "user", "content": "summarize the repo"}
+    assert llm.started_task == "summarize the repo"
+    assert llm.tool_results == []
 
 
 def test_run_agent_tool_then_final_answer(tmp_path):
@@ -62,14 +64,9 @@ def test_run_agent_tool_then_final_answer(tmp_path):
     assert result.success is True
     assert result.final_answer == "readme says hello"
     assert result.steps == 2
-    assert len(llm.calls) == 2
-
-    second_history = llm.calls[1]
-    assert second_history[1]["type"] == "tool_call"
-    assert second_history[1]["tool_call"]["tool_name"] == "read_file"
-    assert second_history[2]["role"] == "tool"
-    assert second_history[2]["tool_result"]["success"] is True
-    assert second_history[2]["tool_result"]["output"] == "hello"
+    assert len(llm.tool_results) == 1
+    assert llm.tool_results[0].success is True
+    assert llm.tool_results[0].output == "hello"
 
 
 def test_run_agent_multiple_tool_calls(tmp_path):
@@ -99,15 +96,7 @@ def test_run_agent_multiple_tool_calls(tmp_path):
     assert result.success is True
     assert result.final_answer == "A then B"
     assert result.steps == 3
-    assert len(llm.calls) == 3
-
-    final_history = llm.calls[2]
-    tool_results = [
-        message["tool_result"]["output"]
-        for message in final_history
-        if message.get("role") == "tool"
-    ]
-    assert tool_results == ["A", "B"]
+    assert [item.output for item in llm.tool_results] == ["A", "B"]
 
 
 def test_run_agent_failed_tool_result_continues(tmp_path):
@@ -136,14 +125,10 @@ def test_run_agent_failed_tool_result_continues(tmp_path):
     assert result.success is True
     assert result.final_answer == "used fallback"
     assert result.steps == 3
-
-    failed_observation = llm.calls[1][2]["tool_result"]
-    assert failed_observation["success"] is False
-    assert failed_observation["error"] == "File not found: missing.txt"
-
-    recovered = llm.calls[2][4]["tool_result"]
-    assert recovered["success"] is True
-    assert recovered["output"] == "fallback"
+    assert llm.tool_results[0].success is False
+    assert llm.tool_results[0].error == "File not found: missing.txt"
+    assert llm.tool_results[1].success is True
+    assert llm.tool_results[1].output == "fallback"
 
 
 def test_run_agent_max_steps_prevents_infinite_loop(tmp_path):
@@ -164,4 +149,4 @@ def test_run_agent_max_steps_prevents_infinite_loop(tmp_path):
     assert result.final_answer is None
     assert "Exceeded maximum steps (3)" in result.error
     assert result.steps == 3
-    assert len(llm.calls) == 3
+    assert len(llm.tool_results) == 2
