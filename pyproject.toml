@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "AI coding agent for GitHub issues"
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.68",
+]
 
 [dependency-groups]
 dev = [
