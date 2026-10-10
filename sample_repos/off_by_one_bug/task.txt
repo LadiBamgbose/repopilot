@@ -1,0 +1,2 @@
+Fix count_items so it returns the number of items in the list. Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

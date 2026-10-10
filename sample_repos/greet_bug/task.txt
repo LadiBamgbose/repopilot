@@ -1,0 +1,2 @@
+Fix greet so it returns a greeting in the form "Hello, <name>!". Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

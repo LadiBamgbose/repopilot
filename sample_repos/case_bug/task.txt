@@ -1,0 +1,2 @@
+Fix normalize so it returns the input string in lowercase. Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.
