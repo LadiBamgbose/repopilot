@@ -1,0 +1,2 @@
+Fix the failing calculator test. Inspect the repository, make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.
