@@ -18,6 +18,10 @@ BENCHMARK_FIXTURE_NAMES = (
     "case_bug",
     "off_by_one_bug",
     "greet_bug",
+    "invoice_fee",
+    "shipping_quote",
+    "order_total",
+    "member_greeting",
 )
 
 _COPY_SKIP = frozenset({".git", ".pytest_cache", "__pycache__", ".venv", "task.txt"})
