@@ -1,0 +1,3 @@
+Invoices are charging the wrong service fee. A $100 invoice should total $110, and a $40 invoice should total $44.
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

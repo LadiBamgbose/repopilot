@@ -236,7 +236,7 @@ def test_shipped_fixtures_start_broken_and_remain_unchanged():
     summary = run_benchmark(tasks, llm=ScriptedLLM(prompts))
 
     assert [task.name for task in tasks] == list(BENCHMARK_FIXTURE_NAMES)
-    assert summary.total_tasks == 4
+    assert summary.total_tasks == len(BENCHMARK_FIXTURE_NAMES)
     assert summary.tasks_passed == 0
     assert summary.pass_rate == 0.0
     assert summary.average_steps == 1.0

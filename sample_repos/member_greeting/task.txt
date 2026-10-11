@@ -1,0 +1,3 @@
+New members see the wrong greeting. A new member named Ada should see "Welcome, Ada."
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.
