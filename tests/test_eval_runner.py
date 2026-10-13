@@ -3,6 +3,12 @@
 import tempfile
 from pathlib import Path
 
+from repopilot.agent.observer import (
+    FinalAnswerReached,
+    ModelResponseReceived,
+    ToolCallRequested,
+    ToolResultReturned,
+)
 from repopilot.agent.schemas import (
     AgentResponse,
     AgentResult,
@@ -17,6 +23,7 @@ from repopilot.evals.benchmark_runner import (
     run_benchmark,
 )
 from repopilot.evals.metrics import summarize
+from repopilot.evals.metrics_observer import BenchmarkMetricsObserver
 from repopilot.evals.schemas import TaskEvalResult
 
 
@@ -61,6 +68,18 @@ def _write_fix() -> ToolCallResponse:
 def _list_files() -> ToolCallResponse:
     return ToolCallResponse(
         tool_call=ToolCall(tool_name="list_files", arguments={}),
+    )
+
+
+def _read(path: str) -> ToolCallResponse:
+    return ToolCallResponse(
+        tool_call=ToolCall(tool_name="read_file", arguments={"path": path}),
+    )
+
+
+def _run_tests() -> ToolCallResponse:
+    return ToolCallResponse(
+        tool_call=ToolCall(tool_name="run_tests", arguments={}),
     )
 
 
@@ -252,6 +271,10 @@ def test_summarize_uses_pytest_success_not_agent_success():
         tests_passed=True,
         steps=4,
         failure_reason="agent stopped",
+        tool_calls=4,
+        tool_usage={"read_file": 4},
+        tool_failures=1,
+        duration_ms=100,
     )
     failed = TaskEvalResult(
         name="still_broken",
@@ -259,6 +282,10 @@ def test_summarize_uses_pytest_success_not_agent_success():
         tests_passed=False,
         steps=2,
         failure_reason="Fixture tests failed (exit code 1)",
+        tool_calls=2,
+        tool_usage={"write_file": 2},
+        tool_failures=3,
+        duration_ms=300,
     )
 
     summary = summarize([passed, failed])
@@ -267,3 +294,111 @@ def test_summarize_uses_pytest_success_not_agent_success():
     assert summary.pass_rate == 0.5
     assert summary.average_steps == 3.0
     assert summary.failed_task_names == ["still_broken"]
+    assert summary.average_tool_calls == 3.0
+    assert summary.total_failed_tool_calls == 4
+    assert summary.average_duration_ms == 200.0
+
+
+def test_metrics_observer_counts_requests_and_failed_results():
+    observer = BenchmarkMetricsObserver()
+    read = ToolCall(tool_name="read_file", arguments={"path": "a.py"})
+    missing = ToolCall(tool_name="read_file", arguments={"path": "missing.py"})
+    observer.on_event(
+        ModelResponseReceived(
+            step=1,
+            response=FinalAnswerResponse(final_answer="ignored"),
+        )
+    )
+    observer.on_event(ToolCallRequested(step=1, tool_call=read))
+    observer.on_event(
+        ToolResultReturned(
+            step=1,
+            tool_call=read,
+            result=ToolResult(success=True, output="ok"),
+        )
+    )
+    observer.on_event(ToolCallRequested(step=2, tool_call=missing))
+    observer.on_event(
+        ToolResultReturned(
+            step=2,
+            tool_call=missing,
+            result=ToolResult(success=False, error="File not found: missing.py"),
+        )
+    )
+    observer.on_event(FinalAnswerReached(step=3, final_answer="done"))
+
+    assert observer.tool_calls == 2
+    assert observer.tool_usage == {"read_file": 2}
+    assert observer.tool_failures == 1
+
+
+def test_recorded_metrics_keep_pytest_success_separate(tmp_path):
+    prompt = "Fix widget.py so the test passes."
+    fixture = _make_fixture(tmp_path, "widget_bug", prompt)
+    llm = ScriptedLLM(
+        {
+            prompt: [
+                _read("widget.py"),
+                _read("missing.py"),
+                _write_fix(),
+                FinalAnswerResponse(final_answer="fixed"),
+            ]
+        }
+    )
+
+    result = run_benchmark(
+        [benchmark_runner.load_benchmark_task(fixture)],
+        llm=llm,
+    ).results[0]
+
+    assert result.tests_passed is True
+    assert result.tool_calls == 3
+    assert result.tool_usage == {"read_file": 2, "write_file": 1}
+    assert result.tool_failures == 1
+    assert isinstance(result.duration_ms, int)
+    assert result.duration_ms >= 0
+
+
+def test_failed_pytest_with_a_successful_tool_is_not_a_tool_failure(tmp_path):
+    prompt = "Fix widget.py so the test passes."
+    fixture = _make_fixture(tmp_path, "widget_bug", prompt)
+    llm = ScriptedLLM(
+        {prompt: [_run_tests(), FinalAnswerResponse(final_answer="still broken")]}
+    )
+
+    result = run_benchmark(
+        [benchmark_runner.load_benchmark_task(fixture)],
+        llm=llm,
+    ).results[0]
+
+    assert result.tests_passed is False
+    assert result.tool_calls == 1
+    assert result.tool_usage == {"run_tests": 1}
+    assert result.tool_failures == 0
+
+
+def test_each_task_gets_a_fresh_metrics_observer(tmp_path):
+    first_prompt = "Inspect the first widget."
+    second_prompt = "Leave the second widget."
+    first = benchmark_runner.load_benchmark_task(
+        _make_fixture(tmp_path, "first_bug", first_prompt)
+    )
+    second = benchmark_runner.load_benchmark_task(
+        _make_fixture(tmp_path, "second_bug", second_prompt)
+    )
+    llm = ScriptedLLM(
+        {
+            first_prompt: [_list_files(), FinalAnswerResponse(final_answer="seen")],
+            second_prompt: [FinalAnswerResponse(final_answer="untouched")],
+        }
+    )
+
+    summary = run_benchmark([first, second], llm=llm)
+
+    assert summary.results[0].tool_calls == 1
+    assert summary.results[0].tool_failures == 0
+    assert summary.results[1].tool_calls == 0
+    assert summary.results[1].tool_usage == {}
+    assert summary.results[1].tool_failures == 0
+    assert summary.average_tool_calls == 0.5
+    assert summary.total_failed_tool_calls == 0

@@ -2,12 +2,14 @@
 
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from repopilot.agent.runner import MAX_STEPS, run_agent
 from repopilot.agent.schemas import AgentResult
 from repopilot.core.tool_protocol import ToolResult
 from repopilot.evals.metrics import summarize
+from repopilot.evals.metrics_observer import BenchmarkMetricsObserver
 from repopilot.evals.schemas import BenchmarkTask, EvalSummary, TaskEvalResult
 from repopilot.llm.client import LLMClient
 from repopilot.tools.run_tests import run_tests
@@ -60,14 +62,28 @@ def run_benchmark(
             workspace_dir = Path(temp_dir) / "workspace"
             _copy_fixture(task.fixture_dir, workspace_dir)
             workspace = Workspace(workspace_dir)
+            observer = BenchmarkMetricsObserver()
+            started = time.perf_counter()
             agent_result = run_agent(
                 task.prompt,
                 llm=llm,
                 workspace=workspace,
                 max_steps=max_steps,
+                observer=observer,
             )
+            duration_ms = int((time.perf_counter() - started) * 1000)
             test_result = run_tests(workspace=workspace)
-        results.append(_task_result(task.name, agent_result, test_result))
+        results.append(
+            _task_result(
+                task.name,
+                agent_result,
+                test_result,
+                tool_calls=observer.tool_calls,
+                tool_usage=dict(observer.tool_usage),
+                tool_failures=observer.tool_failures,
+                duration_ms=duration_ms,
+            )
+        )
     return summarize(results)
 
 
@@ -87,6 +103,11 @@ def _task_result(
     name: str,
     agent_result: AgentResult,
     test_result: ToolResult,
+    *,
+    tool_calls: int,
+    tool_usage: dict[str, int],
+    tool_failures: int,
+    duration_ms: int,
 ) -> TaskEvalResult:
     tests_passed, test_failure = _pytest_outcome(test_result)
     if not agent_result.success:
@@ -101,6 +122,10 @@ def _task_result(
         tests_passed=tests_passed,
         steps=agent_result.steps,
         failure_reason=failure_reason,
+        tool_calls=tool_calls,
+        tool_usage=tool_usage,
+        tool_failures=tool_failures,
+        duration_ms=duration_ms,
     )
 
 
