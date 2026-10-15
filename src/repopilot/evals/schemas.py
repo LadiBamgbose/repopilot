@@ -27,6 +27,10 @@ class TaskEvalResult(BaseModel):
     tests_passed: bool
     steps: int
     failure_reason: str | None = None
+    tool_calls: int
+    tool_usage: dict[str, int]
+    tool_failures: int
+    duration_ms: int
 
 
 class EvalSummary(BaseModel):
@@ -39,4 +43,7 @@ class EvalSummary(BaseModel):
     pass_rate: float
     average_steps: float
     failed_task_names: list[str]
+    average_tool_calls: float
+    total_failed_tool_calls: int
+    average_duration_ms: float
     results: list[TaskEvalResult]

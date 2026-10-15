@@ -28,12 +28,17 @@ def main() -> None:
     for result in summary.results:
         print(
             f"{result.name}: tests_passed={result.tests_passed} "
-            f"steps={result.steps} failure_reason={result.failure_reason}"
+            f"steps={result.steps} tool_calls={result.tool_calls} "
+            f"tool_usage={result.tool_usage} tool_failures={result.tool_failures} "
+            f"duration_ms={result.duration_ms} failure_reason={result.failure_reason}"
         )
     print(f"total tasks: {summary.total_tasks}")
     print(f"tasks passed: {summary.tasks_passed}")
     print(f"pass rate: {summary.pass_rate}")
     print(f"average steps: {summary.average_steps}")
+    print(f"average tool calls: {summary.average_tool_calls}")
+    print(f"total failed tool calls: {summary.total_failed_tool_calls}")
+    print(f"average duration ms: {summary.average_duration_ms}")
     print(f"failed task names: {summary.failed_task_names}")
 
 
