@@ -1,58 +1,79 @@
 # RepoPilot Roadmap
 
-Long-term plan for building RepoPilot into a transparent, testable AI coding agent.
+## v1.0 — complete
 
-## Phase 1: Core Runtime
+Core local coding agent, tools, observability, and deterministic evaluation are implemented and documented.
 
-Foundation for safe, testable tool execution inside a repository workspace.
+### Runtime and tools
 
-- [ ] Workspace abstraction (`workspace.root`)
-- [ ] Shared tool protocol (`ToolCall`, `ToolResult`)
-- [ ] Tool registry and `execute_tool` dispatch
-- [ ] `read_file` tool with repository-boundary checks
-- [ ] Unit tests for `read_file` and tool dispatch
-- [ ] Additional repository tools (`write_file`, `edit_file`, `search_repo`, git helpers, `run_tests`)
-- [ ] Structured event logging for tool invocations
-- [ ] Configuration loading for workspace and runtime settings
+- [x] Workspace abstraction (`workspace.root`) with path-boundary checks
+- [x] Shared tool protocol (`ToolCall`, `ToolResult`)
+- [x] Tool registry and `execute_tool` dispatch
+- [x] Tools: `list_files`, `read_file`, `write_file`, `search_repo`, `run_tests`
+- [x] Provider-neutral `ToolDefinition` / JSON schemas
 
-## Phase 2: Coding Agent
+### Agent and LLM
 
-Orchestrate multi-step work from a GitHub issue to a validated code change.
+- [x] `LLMClient` protocol and scripted test doubles
+- [x] OpenAI Responses API client (`previous_response_id`, function `call_id`)
+- [x] One-tool-per-step agent loop with max-step limit
+- [x] Tool failures returned as observations (no silent swallow)
 
-- [ ] LLM client abstraction
-- [ ] Planning prompts and structured plan schema
-- [ ] Context selection over the local repository
-- [ ] Agent loop that issues `ToolCall`s through `execute_tool`
-- [ ] Edit / patch application workflow
-- [ ] Test-driven retry after failure
-- [ ] PR-style final report generation
+### Observability
 
-## Phase 3: Evaluation Framework
+- [x] Typed agent events + `AgentObserver` protocol
+- [x] Console, metrics, and bounded benchmark trace observers
+- [x] Composite fan-out for simultaneous metrics + traces
 
-Measure agent quality with repeatable benchmarks.
+### Evaluation
 
-- [ ] Benchmark task format and fixtures
-- [ ] Benchmark runner over sample repositories
-- [ ] Success / failure scoring criteria
-- [ ] Cost and latency tracking per run
-- [ ] Regression suite for core agent behaviors
+- [x] `BenchmarkTask` / `TaskEvalResult` / `EvalSummary` schemas
+- [x] Temp-copy fixture isolation and reset
+- [x] Pytest exit code as sole pass/fail criterion
+- [x] 13 mini-repo tasks + 5 ShopKit shared-repo tasks with `test_selector`
+- [x] CLI metrics output and optional `--trace <task>`
 
-## Phase 4: Inference Platform
+v1 deliberately stops here: no new agent features are required for a readable portfolio baseline.
 
-Operate the agent as a service rather than a local script.
+---
 
-- [ ] API surface for submitting issues / tasks
-- [ ] Job queue and run lifecycle
-- [ ] Model routing and pricing integration
-- [ ] Persistent run history and artifacts
-- [ ] Authentication and multi-tenant workspace isolation
+## Future work (not started)
 
-## Phase 5: Production Readiness
+These ideas are explicitly **out of scope** for v1. Do not treat them as missing bugs in the current release.
 
-Harden RepoPilot for reliable, observable operation.
+### GitHub issue / branch / PR workflow
 
-- [ ] Robust error handling and timeout policies
-- [ ] Observability (metrics, traces, structured logs)
-- [ ] Security review of tool sandboxing and path controls
-- [ ] CI gates for tests, lint, and benchmark smoke runs
-- [ ] Operational runbooks and release process
+- Ingest a GitHub issue as the task source
+- Create a working branch, commit agent edits, open a PR-style report
+- Wire authentication and repo selection for remote targets
+
+### Richer context management
+
+- Smarter file selection over larger repositories
+- Summaries / indexes so the model does not rely only on search + read loops
+- Explicit context budgets and truncation policy
+
+### Persistence
+
+- Store run history, metrics, and traces beyond a single process
+- Compare regression runs over time
+- Optional artifact export for failed tasks
+
+### Self-hosted open-source model inference (vLLM)
+
+- Run open models behind the same `LLMClient` boundary
+- Keep tools and the agent loop provider-neutral
+- Document hardware and latency tradeoffs versus hosted APIs
+
+### Advanced planning and reflection
+
+- Structured multi-step plans before edits
+- Explicit reflection / retry policies after test failure
+- Separate planner vs editor roles if evidence shows they help
+
+### Platform / production (longer horizon)
+
+- API job queue and multi-tenant isolation
+- Cost and token accounting
+- CI gates for lint plus benchmark smoke runs
+- Hardened sandboxing beyond path checks

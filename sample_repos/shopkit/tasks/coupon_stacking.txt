@@ -1,0 +1,3 @@
+A percentage coupon and a loyalty discount must not both reduce the same merchandise line. Loyalty applies first; the coupon applies to the reduced amount.
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

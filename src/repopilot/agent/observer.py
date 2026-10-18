@@ -70,6 +70,17 @@ class AgentObserver(Protocol):
         ...
 
 
+class CompositeAgentObserver:
+    """Forward each agent event to several observers in order."""
+
+    def __init__(self, observers: list[AgentObserver]) -> None:
+        self._observers = list(observers)
+
+    def on_event(self, event: AgentEvent) -> None:
+        for observer in self._observers:
+            observer.on_event(event)
+
+
 class ConsoleAgentObserver:
     """Print a short, redacted trace of each agent event."""
 

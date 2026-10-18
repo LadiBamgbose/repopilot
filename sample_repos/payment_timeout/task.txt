@@ -1,0 +1,3 @@
+Payment requests time out too quickly. The payment client timeout should be 30 seconds.
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

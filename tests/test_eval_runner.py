@@ -19,12 +19,17 @@ from repopilot.core.tool_protocol import ToolCall, ToolResult
 from repopilot.evals import benchmark_runner
 from repopilot.evals.benchmark_runner import (
     BENCHMARK_FIXTURE_NAMES,
+    SHOPKIT_TASKS,
     default_benchmark_tasks,
     run_benchmark,
+    score_tests,
 )
 from repopilot.evals.metrics import summarize
 from repopilot.evals.metrics_observer import BenchmarkMetricsObserver
-from repopilot.evals.schemas import TaskEvalResult
+from repopilot.evals.schemas import BenchmarkTask, TaskEvalResult
+from repopilot.evals.trace_observer import BenchmarkTraceObserver
+from repopilot.tools.run_tests import run_tests
+from repopilot.workspace import Workspace
 
 
 BROKEN_SOURCE = "def value() -> int:\n    return 1\n"
@@ -250,18 +255,199 @@ def test_shipped_fixtures_start_broken_and_remain_unchanged():
     sample_root = benchmark_runner._sample_repos_root()
     before = _snapshot(sample_root)
     tasks = default_benchmark_tasks(sample_root)
+    expected_names = list(BENCHMARK_FIXTURE_NAMES) + [name for name, _, _ in SHOPKIT_TASKS]
     prompts = {task.prompt: [FinalAnswerResponse(final_answer="done")] for task in tasks}
 
     summary = run_benchmark(tasks, llm=ScriptedLLM(prompts))
 
-    assert [task.name for task in tasks] == list(BENCHMARK_FIXTURE_NAMES)
-    assert summary.total_tasks == len(BENCHMARK_FIXTURE_NAMES)
+    assert [task.name for task in tasks] == expected_names
+    assert summary.total_tasks == len(expected_names)
     assert summary.tasks_passed == 0
     assert summary.pass_rate == 0.0
     assert summary.average_steps == 1.0
-    assert summary.failed_task_names == list(BENCHMARK_FIXTURE_NAMES)
+    assert summary.failed_task_names == expected_names
     assert all(result.tests_passed is False for result in summary.results)
     assert _snapshot(sample_root) == before
+
+
+def _make_shared_fixture(root: Path) -> Path:
+    fixture = root / "shared_shop"
+    (fixture / "tests").mkdir(parents=True)
+    (fixture / "tasks").mkdir()
+    (fixture / "alpha.py").write_text("def alpha() -> int:\n    return 1\n", encoding="utf-8")
+    (fixture / "beta.py").write_text("def beta() -> int:\n    return 1\n", encoding="utf-8")
+    (fixture / "tests" / "test_alpha.py").write_text(
+        "from alpha import alpha\n\n\ndef test_alpha():\n    assert alpha() == 2\n",
+        encoding="utf-8",
+    )
+    (fixture / "tests" / "test_beta.py").write_text(
+        "from beta import beta\n\n\ndef test_beta():\n    assert beta() == 2\n",
+        encoding="utf-8",
+    )
+    (fixture / "pytest.ini").write_text(
+        "[pytest]\ntestpaths = tests\npythonpath = .\n",
+        encoding="utf-8",
+    )
+    (fixture / "tasks" / "alpha.txt").write_text("Fix alpha.\n", encoding="utf-8")
+    (fixture / "tasks" / "beta.txt").write_text("Fix beta.\n", encoding="utf-8")
+    return fixture
+
+
+def test_multiple_tasks_can_share_one_fixture_dir(tmp_path):
+    fixture = _make_shared_fixture(tmp_path)
+    alpha = BenchmarkTask(
+        name="alpha_task",
+        fixture_dir=fixture,
+        prompt="Fix alpha.",
+        test_selector="tests/test_alpha.py",
+    )
+    beta = BenchmarkTask(
+        name="beta_task",
+        fixture_dir=fixture,
+        prompt="Fix beta.",
+        test_selector="tests/test_beta.py",
+    )
+
+    assert alpha.fixture_dir == beta.fixture_dir
+    assert alpha.test_selector != beta.test_selector
+
+
+def test_task_selector_scores_only_selected_tests(tmp_path):
+    fixture = _make_shared_fixture(tmp_path)
+    before = _snapshot(fixture)
+    alpha_prompt = "Fix alpha."
+    beta_prompt = "Fix beta."
+    alpha = BenchmarkTask(
+        name="alpha_task",
+        fixture_dir=fixture,
+        prompt=alpha_prompt,
+        test_selector="tests/test_alpha.py",
+    )
+    beta = BenchmarkTask(
+        name="beta_task",
+        fixture_dir=fixture,
+        prompt=beta_prompt,
+        test_selector="tests/test_beta.py",
+    )
+    llm = ScriptedLLM(
+        {
+            alpha_prompt: [
+                ToolCallResponse(
+                    tool_call=ToolCall(
+                        tool_name="write_file",
+                        arguments={
+                            "path": "alpha.py",
+                            "contents": "def alpha() -> int:\n    return 2\n",
+                        },
+                    )
+                ),
+                FinalAnswerResponse(final_answer="alpha fixed"),
+            ],
+            beta_prompt: [FinalAnswerResponse(final_answer="left alone")],
+        }
+    )
+
+    summary = run_benchmark([alpha, beta], llm=llm)
+
+    assert summary.results[0].tests_passed is True
+    assert summary.results[1].tests_passed is False
+    assert summary.tasks_passed == 1
+    assert (fixture / "alpha.py").read_text(encoding="utf-8") == "def alpha() -> int:\n    return 1\n"
+    assert _snapshot(fixture) == before
+
+
+def test_selected_task_can_pass_while_unrelated_tests_still_fail(tmp_path):
+    fixture = _make_shared_fixture(tmp_path)
+    prompt = "Fix alpha only."
+    task = BenchmarkTask(
+        name="alpha_task",
+        fixture_dir=fixture,
+        prompt=prompt,
+        test_selector="tests/test_alpha.py",
+    )
+    llm = ScriptedLLM(
+        {
+            prompt: [
+                ToolCallResponse(
+                    tool_call=ToolCall(
+                        tool_name="write_file",
+                        arguments={
+                            "path": "alpha.py",
+                            "contents": "def alpha() -> int:\n    return 2\n",
+                        },
+                    )
+                ),
+                FinalAnswerResponse(final_answer="done"),
+            ]
+        }
+    )
+
+    result = run_benchmark([task], llm=llm).results[0]
+    assert result.tests_passed is True
+
+    # Full-suite scoring on a copy that only fixed alpha still fails.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        workspace_dir = Path(temp_dir) / "workspace"
+        benchmark_runner._copy_fixture(fixture, workspace_dir)
+        (workspace_dir / "alpha.py").write_text(
+            "def alpha() -> int:\n    return 2\n",
+            encoding="utf-8",
+        )
+        workspace = Workspace(workspace_dir)
+        full = score_tests(workspace=workspace, test_selector=None)
+        selected = score_tests(
+            workspace=workspace,
+            test_selector="tests/test_alpha.py",
+        )
+        agent_view = run_tests(workspace=workspace)
+
+    assert full.output["exit_code"] != 0
+    assert selected.output["exit_code"] == 0
+    assert agent_view.output["exit_code"] != 0
+
+
+def test_tasks_directory_is_not_copied_into_workspace(tmp_path):
+    fixture = _make_shared_fixture(tmp_path)
+    prompt = "Inspect files."
+    task = BenchmarkTask(
+        name="alpha_task",
+        fixture_dir=fixture,
+        prompt=prompt,
+        test_selector="tests/test_alpha.py",
+    )
+    llm = ScriptedLLM({prompt: [_list_files(), FinalAnswerResponse(final_answer="done")]})
+
+    run_benchmark([task], llm=llm)
+
+    listed = llm.tool_results[0].output
+    assert "tasks/alpha.txt" not in listed
+    assert "alpha.py" in listed
+
+
+def test_no_selector_still_scores_full_suite(tmp_path):
+    prompt = "Fix widget.py so the test passes."
+    fixture = _make_fixture(tmp_path, "widget_bug", prompt)
+    task = benchmark_runner.load_benchmark_task(fixture)
+    assert task.test_selector is None
+
+    failing = run_benchmark(
+        [task],
+        llm=ScriptedLLM({prompt: [FinalAnswerResponse(final_answer="nope")]}),
+    ).results[0]
+    assert failing.tests_passed is False
+
+    passing = run_benchmark(
+        [task],
+        llm=ScriptedLLM(
+            {
+                prompt: [
+                    _write_fix(),
+                    FinalAnswerResponse(final_answer="fixed"),
+                ]
+            }
+        ),
+    ).results[0]
+    assert passing.tests_passed is True
 
 
 def test_summarize_uses_pytest_success_not_agent_success():
@@ -402,3 +588,203 @@ def test_each_task_gets_a_fresh_metrics_observer(tmp_path):
     assert summary.results[1].tool_failures == 0
     assert summary.average_tool_calls == 0.5
     assert summary.total_failed_tool_calls == 0
+
+
+def test_trace_observer_records_tool_calls_and_results_in_order():
+    observer = BenchmarkTraceObserver()
+    write = ToolCall(
+        tool_name="write_file",
+        arguments={"path": "widget.py", "contents": FIXED_SOURCE},
+    )
+    tests = ToolCall(tool_name="run_tests", arguments={})
+
+    observer.on_event(
+        ModelResponseReceived(step=1, response=_write_fix())
+    )
+    observer.on_event(ToolCallRequested(step=1, tool_call=write))
+    observer.on_event(
+        ToolResultReturned(
+            step=1,
+            tool_call=write,
+            result=ToolResult(success=True, output="wrote widget.py"),
+        )
+    )
+    observer.on_event(
+        ModelResponseReceived(step=2, response=_run_tests())
+    )
+    observer.on_event(ToolCallRequested(step=2, tool_call=tests))
+    observer.on_event(
+        ToolResultReturned(
+            step=2,
+            tool_call=tests,
+            result=ToolResult(
+                success=True,
+                output={
+                    "exit_code": 1,
+                    "stdout": (
+                        "===== short test summary info =====\n"
+                        "FAILED test_widget.py::test_value - assert 1 == 2\n"
+                    ),
+                },
+            ),
+        )
+    )
+    observer.on_event(FinalAnswerReached(step=3, final_answer="still broken"))
+
+    assert [event.event_type for event in observer.events] == [
+        "model_response",
+        "tool_call",
+        "tool_result",
+        "model_response",
+        "tool_call",
+        "tool_result",
+        "final_answer",
+    ]
+    assert [event.step for event in observer.events] == [1, 1, 1, 2, 2, 2, 3]
+    write_call = observer.events[1]
+    assert write_call.tool_name == "write_file"
+    assert write_call.path == "widget.py"
+    write_result = observer.events[2]
+    assert write_result.path == "widget.py"
+    assert write_result.tool_success is True
+    run_result = observer.events[5]
+    assert run_result.tool_name == "run_tests"
+    assert run_result.exit_code == 1
+    assert run_result.failure_summary is not None
+    assert "FAILED test_widget.py::test_value" in run_result.failure_summary
+    assert observer.events[6].final_answer == "still broken"
+
+
+def test_write_file_trace_includes_target_path():
+    observer = BenchmarkTraceObserver()
+    tool_call = ToolCall(
+        tool_name="write_file",
+        arguments={"path": "src/quote.py", "contents": "x = 1\n"},
+    )
+    observer.on_event(ToolCallRequested(step=1, tool_call=tool_call))
+    observer.on_event(
+        ToolResultReturned(
+            step=1,
+            tool_call=tool_call,
+            result=ToolResult(success=True, output="ok"),
+        )
+    )
+
+    assert observer.events[0].path == "src/quote.py"
+    assert observer.events[1].path == "src/quote.py"
+    assert observer.events[0].tool_arguments is not None
+    assert observer.events[0].tool_arguments["path"] == "src/quote.py"
+
+
+def test_run_tests_trace_includes_exit_code_and_failure_summary():
+    observer = BenchmarkTraceObserver()
+    tool_call = ToolCall(tool_name="run_tests", arguments={})
+    observer.on_event(ToolCallRequested(step=2, tool_call=tool_call))
+    observer.on_event(
+        ToolResultReturned(
+            step=2,
+            tool_call=tool_call,
+            result=ToolResult(
+                success=True,
+                output={
+                    "exit_code": 1,
+                    "stdout": (
+                        "FAILED tests/test_quote.py::test_express - AssertionError\n"
+                        "FAILED tests/test_quote.py::test_bulk - assert False\n"
+                    ),
+                },
+            ),
+        )
+    )
+
+    result = observer.events[1]
+    assert result.exit_code == 1
+    assert result.failure_summary is not None
+    assert "test_express" in result.failure_summary
+    assert "test_bulk" in result.failure_summary
+    assert result.tool_success is True
+
+
+def test_benchmark_traces_do_not_leak_between_tasks(tmp_path):
+    first_prompt = "Inspect the first widget."
+    second_prompt = "Leave the second widget."
+    first = benchmark_runner.load_benchmark_task(
+        _make_fixture(tmp_path, "first_bug", first_prompt)
+    )
+    second = benchmark_runner.load_benchmark_task(
+        _make_fixture(tmp_path, "second_bug", second_prompt)
+    )
+    llm = ScriptedLLM(
+        {
+            first_prompt: [_list_files(), FinalAnswerResponse(final_answer="seen")],
+            second_prompt: [FinalAnswerResponse(final_answer="untouched")],
+        }
+    )
+
+    summary = run_benchmark([first, second], llm=llm)
+
+    first_trace = summary.results[0].trace
+    second_trace = summary.results[1].trace
+    assert any(event.event_type == "tool_call" for event in first_trace)
+    assert any(
+        event.tool_name == "list_files" for event in first_trace if event.tool_name
+    )
+    assert not any(event.event_type == "tool_call" for event in second_trace)
+    assert any(event.event_type == "final_answer" for event in second_trace)
+
+
+def test_recorded_traces_keep_pytest_success_separate(tmp_path):
+    prompt = "Fix widget.py so the test passes."
+    fixture = _make_fixture(tmp_path, "widget_bug", prompt)
+    llm = ScriptedLLM(
+        {
+            prompt: [
+                _read("widget.py"),
+                _write_fix(),
+                _run_tests(),
+                FinalAnswerResponse(final_answer="fixed"),
+            ]
+        }
+    )
+
+    result = run_benchmark(
+        [benchmark_runner.load_benchmark_task(fixture)],
+        llm=llm,
+    ).results[0]
+
+    assert result.tests_passed is True
+    assert result.failure_reason is None
+    assert any(event.path == "widget.py" for event in result.trace)
+    run_results = [
+        event
+        for event in result.trace
+        if event.event_type == "tool_result" and event.tool_name == "run_tests"
+    ]
+    assert len(run_results) == 1
+    assert run_results[0].exit_code == 0
+    assert run_results[0].failure_summary is None
+
+
+def test_failed_pytest_trace_still_uses_harness_pass_fail(tmp_path):
+    prompt = "Fix widget.py so the test passes."
+    fixture = _make_fixture(tmp_path, "widget_bug", prompt)
+    llm = ScriptedLLM(
+        {prompt: [_run_tests(), FinalAnswerResponse(final_answer="still broken")]}
+    )
+
+    result = run_benchmark(
+        [benchmark_runner.load_benchmark_task(fixture)],
+        llm=llm,
+    ).results[0]
+
+    assert result.tests_passed is False
+    assert result.failure_reason is not None
+    run_results = [
+        event
+        for event in result.trace
+        if event.event_type == "tool_result" and event.tool_name == "run_tests"
+    ]
+    assert len(run_results) == 1
+    assert run_results[0].exit_code == 1
+    assert run_results[0].failure_summary is not None
+    assert "FAILED" in run_results[0].failure_summary

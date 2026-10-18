@@ -1,0 +1,3 @@
+Stored emails are inconsistent. Normalized addresses should be lowercase and free of surrounding spaces.
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

@@ -1,0 +1,3 @@
+Password validation accepts passwords it should reject. Passwords must be at least 8 characters and include a digit.
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

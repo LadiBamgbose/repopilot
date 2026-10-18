@@ -2,6 +2,7 @@
 
 from repopilot.agent.observer import (
     AgentObserver,
+    CompositeAgentObserver,
     ConsoleAgentObserver,
     FinalAnswerReached,
     ModelResponseReceived,
@@ -20,6 +21,7 @@ __all__ = [
     "AgentObserver",
     "AgentResponse",
     "AgentResult",
+    "CompositeAgentObserver",
     "ConsoleAgentObserver",
     "FinalAnswerReached",
     "FinalAnswerResponse",

@@ -1,0 +1,3 @@
+Active users show the wrong status text. An active user named Ada should see "Active: Ada".
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.

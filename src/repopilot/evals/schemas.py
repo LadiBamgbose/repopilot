@@ -2,9 +2,10 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from repopilot.agent.schemas import AgentResult
+from repopilot.evals.trace_observer import TraceEvent
 
 
 class BenchmarkTask(BaseModel):
@@ -15,6 +16,7 @@ class BenchmarkTask(BaseModel):
     name: str
     fixture_dir: Path
     prompt: str
+    test_selector: str | None = None
 
 
 class TaskEvalResult(BaseModel):
@@ -31,6 +33,7 @@ class TaskEvalResult(BaseModel):
     tool_usage: dict[str, int]
     tool_failures: int
     duration_ms: int
+    trace: list[TraceEvent] = Field(default_factory=list)
 
 
 class EvalSummary(BaseModel):
