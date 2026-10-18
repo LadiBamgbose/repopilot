@@ -1,6 +1,7 @@
 """Tests for agent-loop observer callbacks."""
 
 from repopilot.agent.observer import (
+    CompositeAgentObserver,
     ConsoleAgentObserver,
     FinalAnswerReached,
     ModelResponseReceived,
@@ -43,6 +44,18 @@ def _read(path: str) -> ToolCallResponse:
     return ToolCallResponse(
         tool_call=ToolCall(tool_name="read_file", arguments={"path": path}),
     )
+
+
+def test_composite_observer_forwards_events_in_order():
+    first = RecordingObserver()
+    second = RecordingObserver()
+    composite = CompositeAgentObserver([first, second])
+    event = FinalAnswerReached(step=1, final_answer="done")
+
+    composite.on_event(event)
+
+    assert first.events == [event]
+    assert second.events == [event]
 
 
 def test_observer_immediate_final_answer(tmp_path):

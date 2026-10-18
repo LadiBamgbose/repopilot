@@ -1,0 +1,2 @@
+TIMEOUT_SECONDS = 1800
+COOKIE_NAME = "session"

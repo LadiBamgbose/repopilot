@@ -11,8 +11,22 @@ Rules that guide how RepoPilot is built and reviewed.
   tests). Model I/O belongs in the agent / LLM layer.
 - **Agent orchestration lives outside tools.** Planning, retries, and control
   flow sit above `execute_tool`, not inside individual tools.
+- **One tool call per agent step.** The runner and OpenAI client stay aligned
+  (`parallel_tool_calls=False`) so conversation state and traces stay linear.
 - **Every tool requires unit tests.** Cover success paths and important failure
   modes (missing files, path escape, invalid input) before expanding scope.
+
+## Determinism and evaluation
+
+- **Deterministic code for deterministic responsibilities.** Path checks,
+  registry dispatch, scoring, metric aggregation, and fixture isolation must
+  not depend on model creativity. Keep nondeterminism inside the LLM client.
+- **Pytest is the benchmark source of truth.** Do not substitute LLM judging or
+  agent self-report for `tests_passed`.
+- **Instrument via observers.** Metrics and traces subscribe to agent events;
+  they must not change prompts, tools, or loop policy.
+- **Automated tests never call real model APIs.** Use scripted LLMs in unit and
+  harness tests; reserve live OpenAI runs for explicit benchmark scripts.
 
 ## Design and delivery
 

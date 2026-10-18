@@ -3,11 +3,13 @@
 Run from the repository root:
 
     PYTHONPATH=src python scripts/run_benchmark.py
+    PYTHONPATH=src python scripts/run_benchmark.py --trace shipping_quote
 
 The API key is read by the OpenAI SDK from OPENAI_API_KEY.
 Override the model with OPENAI_MODEL.
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -18,12 +20,24 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from repopilot.evals.benchmark_runner import default_benchmark_tasks, run_benchmark
+from repopilot.evals.trace_observer import format_trace
 from repopilot.llm.openai_client import OpenAIClient
 
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Run RepoPilot benchmarks.")
+    parser.add_argument(
+        "--trace",
+        action="append",
+        default=[],
+        metavar="TASK",
+        help="Print the detailed execution trace for a task name. May be repeated.",
+    )
+    args = parser.parse_args(argv)
+    trace_names = set(args.trace)
+
     summary = run_benchmark(default_benchmark_tasks(), llm=OpenAIClient(model=MODEL))
     for result in summary.results:
         print(
@@ -32,6 +46,10 @@ def main() -> None:
             f"tool_usage={result.tool_usage} tool_failures={result.tool_failures} "
             f"duration_ms={result.duration_ms} failure_reason={result.failure_reason}"
         )
+        if result.name in trace_names:
+            print(f"--- trace: {result.name} ---")
+            print(format_trace(result.trace))
+            print(f"--- end trace: {result.name} ---")
     print(f"total tasks: {summary.total_tasks}")
     print(f"tasks passed: {summary.tasks_passed}")
     print(f"pass rate: {summary.pass_rate}")

@@ -1,0 +1,3 @@
+Gold members should pay 15% less on merchandise subtotals. A $100 gold checkout should charge $85 before shipping.
+Make the smallest correct change, run the tests, and stop when they pass.
+The task is complete when pytest passes.
